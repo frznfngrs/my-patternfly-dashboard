@@ -28,7 +28,8 @@ import {
   CheckCircleIcon,
   ExclamationTriangleIcon
 } from '@patternfly/react-icons';
-import { ComputeDevice, GpuInfo, setComputePowerState } from '../api';
+import { fetchUcpSystems, setComputePowerState, ComputeDevice, GpuInfo } from '../api';
+
 
 interface ComputeDeviceDetailsProps {
   device: ComputeDevice;

@@ -21,7 +21,7 @@ import {
   Button
 } from '@patternfly/react-core';
 import { ArrowLeftIcon } from '@patternfly/react-icons';
-import { fetchInfrastructureStatus } from '../api';
+import { fetchUcpSystems } from '../api';
 import { ComputeDeviceList } from './ComputeDeviceList';
 
 const getStatusVariant = (status: string = ''): "green" | "orange" | "red" | "blue" => {
@@ -65,13 +65,14 @@ export function SystemDetails() {
       }
 
       try {
-        const response = await fetchInfrastructureStatus();
+        const response = await fetchUcpSystems();
         if (response.error) {
           setError(response.error);
           return;
         }
 
-        const foundSystem = response.data.find(sys => sys.resourceId === id);
+        const foundSystem = response.data?.find(sys => sys.resourceId === id);
+
         if (!foundSystem) {
           setError('System not found');
           return;

@@ -13,7 +13,7 @@ import {
   MenuToggle,
 } from '@patternfly/react-core';
 import { ServerIcon, EllipsisVIcon } from '@patternfly/react-icons';
-import { fetchInfrastructureStatus, setComputePowerState, ComputeDevice } from '../api';
+import { fetchUcpSystems, setComputePowerState, ComputeDevice } from '../api';
 
 interface Props {
   systemId: string;
@@ -28,13 +28,14 @@ export function ComputeDeviceList({ systemId }: Props) {
 
   const loadData = async () => {
     try {
-      const response = await fetchInfrastructureStatus();
+      const response = await fetchUcpSystems();
       if (response.error) {
         setError(response.error);
         return;
       }
 
-      const system = response.data.find(sys => sys.resourceId === systemId);
+      const system = response.data?.find(sys => sys.resourceId === systemId);
+
       if (!system) {
         setError('System not found');
         return;

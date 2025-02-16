@@ -3,11 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, CardTitle, Grid, GridItem, Spinner, Alert, Label, Button } from '@patternfly/react-core';
 import { ServerIcon } from '@patternfly/react-icons';
 import './styles.css';
-import { fetchInfrastructureStatus, ComputeDevice, UcpSystem } from './api';
+import { fetchUcpSystems, setComputePowerState, ComputeDevice, UcpSystem } from './api';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { LatLngExpression, icon } from 'leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
+import { logout } from './api'; // Import the logout function
+
 
 const customMarkerIcon = icon({
   iconUrl: require('leaflet/dist/images/marker-icon.png'),
@@ -17,6 +19,8 @@ const customMarkerIcon = icon({
   shadowUrl: require('leaflet/dist/images/marker-shadow.png'),
   shadowSize: [41, 41]
 });
+
+
 
 function getStatusVariant(status: string) {
   switch (status.toLowerCase()) {
@@ -34,32 +38,55 @@ export default function Dashboard() {
   const [error, setError] = useState('');
   const [hoveredSystem, setHoveredSystem] = useState<UcpSystem | null>(null);
 
+  const handleLogout = () => {
+    logout();
+    navigate('/login'); // Redirect user to login page
+  };
   const loadData = useCallback(async () => {
     try {
-      const infrastructure = await fetchInfrastructureStatus();
-      
-      if (infrastructure.error) {
-        setError(infrastructure.error);
+      const response = await fetchUcpSystems();
+  
+      console.log("API Response:", response); // ✅ Debugging log
+  
+      if (response.error) {
+        setError(response.error);
       } else {
-        const data = infrastructure.data || [];
+        const data = response.data || [];
+        
+        if (!Array.isArray(data)) {
+          console.error("❌ Expected an array but received:", data);
+          throw new Error("Invalid API response: Expected an array.");
+        }
+  
         setInfrastructureData(data);
-        // Extract compute devices from all UCP systems
-        const allComputeDevices = data
-          .flatMap(system => system.computeDevices || [])
-          .filter(device => device); // Filter out null/undefined
-        setComputeDevices(allComputeDevices);
       }
     } catch (err) {
-      setError('Failed to load data.');
+      console.error("❌ Error in loadData:", err);
+      setError("Failed to load data.");
     }
   }, []);
+  
 
   useEffect(() => {
+    async function loadData() {
+      try {
+        const response = await fetchUcpSystems();
+        if (response.error) {
+          setError(response.error);
+        } else {
+          setInfrastructureData(response.data || []);
+        }
+      } catch (err) {
+        setError('Failed to load data.');
+      }
+    }
+  
     loadData();
     const interval = setInterval(loadData, 30000); // Refresh every 30 seconds
     return () => clearInterval(interval);
-  }, [loadData]);
-
+  }, []);
+  
+ 
   const handleCardClick = (device: ComputeDevice) => {
     const system = infrastructureData.find(sys => 
       sys.computeDevices?.some((d: ComputeDevice) => d.resourceId === device.resourceId)
@@ -72,6 +99,10 @@ export default function Dashboard() {
   return (
     <>
       <Grid hasGutter style={{ marginBottom: '1rem' }}>
+        {/* Logout Button */}
+        <GridItem span={12} style={{ textAlign: 'right', marginTop: '1rem' }}>
+          <Button variant="danger" onClick={handleLogout}>Logout</Button>
+        </GridItem>
         <GridItem span={3}>
           <Card isCompact className="metric-card">
             <CardBody>
@@ -113,10 +144,13 @@ export default function Dashboard() {
       <MapContainer center={[20, 0] as LatLngExpression} zoom={2} style={{ height: '400px', width: '100%' }}>
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
         <MarkerClusterGroup>
-          {infrastructureData.map(system => (
+        {Array.isArray(infrastructureData) && infrastructureData.map(system => {
+          const lat = system.geoInformation?.latitude ? parseFloat(system.geoInformation.latitude) : 0;
+          const lon = system.geoInformation?.longitude ? parseFloat(system.geoInformation.longitude) : 0;
+          return (
             <Marker 
               key={system.resourceId} 
-              position={[system.geoInformation.latitude, system.geoInformation.longitude] as LatLngExpression} 
+              position={[lat, lon] as LatLngExpression} 
               icon={customMarkerIcon}
             >
               <Popup>
@@ -142,7 +176,8 @@ export default function Dashboard() {
                 </div>
               </Popup>
             </Marker>
-          ))}
+          );
+      })}
         </MarkerClusterGroup>
       </MapContainer>
 
