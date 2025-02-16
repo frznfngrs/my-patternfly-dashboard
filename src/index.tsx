@@ -1,3 +1,4 @@
+import '@patternfly/react-core/dist/styles/base.css'; // ✅ Move this to the top
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';

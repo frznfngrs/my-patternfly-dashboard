@@ -1,0 +1,53 @@
+/* Card transitions */
+.hover-card {
+  transition: all 0.2s ease-in-out;
+}
+
+.hover-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Map hover card animations */
+.hover-card-container {
+  animation: slideIn 0.2s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Map popup custom styles */
+.leaflet-popup-content {
+  margin: 12px;
+}
+
+.leaflet-popup-content p {
+  margin: 0;
+}
+
+.leaflet-popup-content h3 {
+  color: var(--pf-global--primary-color--100);
+}
+
+/* Metric cards */
+.metric-card {
+  background: var(--pf-global--BackgroundColor--100);
+  transition: background-color 0.2s ease;
+}
+
+.metric-card:hover {
+  background: var(--pf-global--BackgroundColor--200);
+}
+
+.metric-value {
+  color: var(--pf-global--primary-color--100);
+  font-weight: var(--pf-global--FontWeight--bold);
+}
