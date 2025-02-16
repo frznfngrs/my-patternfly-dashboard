@@ -1,16 +1,48 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, CardBody, CardTitle, Grid, GridItem, Spinner, Alert, Label, Button } from '@patternfly/react-core';
-import { ServerIcon } from '@patternfly/react-icons';
-import './styles.css';
-import { fetchUcpSystems, setComputePowerState, ComputeDevice, UcpSystem } from './api';
+import { Card, CardBody, CardTitle, Grid, GridItem, Spinner, Alert, Button, List, ListItem } from '@patternfly/react-core';
+import { ChartDonut, ChartThemeColor } from '@patternfly/react-charts/victory';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
-import { LatLngExpression, icon } from 'leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
-import { logout } from './api'; // Import the logout function
+import { LatLngExpression, icon } from 'leaflet';
+import { fetchUcpSystems, fetchComputeDevices, fetchFirmwareCompliance, fetchActiveTasks, fetchRecentAlerts, logout } from './api';
 
+// ✅ Define TypeScript interfaces
+interface GeoInformation {
+  latitude?: string;
+  longitude?: string;
+  country?: string;
+  zipcode?: string;
+}
 
+interface ComputeDevice {
+  resourceId: string;
+  serverLabel?: string;
+  network?: { hostName?: string };
+  bmcAddress?: string;
+}
+
+interface UcpSystem {
+  resourceId: string;
+  name: string;
+  region?: string;
+  computeDevices?: ComputeDevice[];
+  geoInformation?: GeoInformation;
+}
+
+interface Alert {
+  device: string;
+  alert: string;
+}
+
+interface Task {
+  id: string;
+  name: string;
+  status: string;
+  startTime: string;
+}
+
+// ✅ Custom marker for map
 const customMarkerIcon = icon({
   iconUrl: require('leaflet/dist/images/marker-icon.png'),
   iconSize: [25, 41],
@@ -20,212 +52,208 @@ const customMarkerIcon = icon({
   shadowSize: [41, 41]
 });
 
-
-
-function getStatusVariant(status: string) {
-  switch (status.toLowerCase()) {
-    case 'normal': return 'green';
-    case 'warning': return 'orange';
-    case 'critical': return 'red';
-    default: return 'blue';
-  }
-}
-
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [infrastructureData, setInfrastructureData] = useState<UcpSystem[]>([]);
-  const [computeDevices, setComputeDevices] = useState<ComputeDevice[]>([]);
-  const [error, setError] = useState('');
-  const [hoveredSystem, setHoveredSystem] = useState<UcpSystem | null>(null);
 
-  const handleLogout = () => {
-    logout();
-    navigate('/login'); // Redirect user to login page
-  };
+  // ✅ Explicitly define state types
+  const [systems, setSystems] = useState<UcpSystem[]>([]);
+  const [computeDevices, setComputeDevices] = useState<ComputeDevice[]>([]);
+  const [firmwareCompliance, setFirmwareCompliance] = useState<{ total: number; compliant: number; nonCompliant: number }>({
+    total: 0,
+    compliant: 0,
+    nonCompliant: 0
+  });
+  const [activeTasks, setActiveTasks] = useState<Task[]>([]);
+  const [recentAlerts, setRecentAlerts] = useState<Alert[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
   const loadData = useCallback(async () => {
     try {
-      const response = await fetchUcpSystems();
+      setLoading(true);
+      
+      const [systemsResponse, devicesResponse, firmwareResponse, tasksResponse, alertsResponse] = await Promise.all([
+        fetchUcpSystems(),
+        fetchComputeDevices(),
+        fetchFirmwareCompliance(),
+        fetchActiveTasks(),
+        fetchRecentAlerts()
+      ]);
   
-      console.log("API Response:", response); // ✅ Debugging log
+      console.log("🟢 API Response - Systems:", systemsResponse);
+      console.log("🟢 API Response - Devices:", devicesResponse);
+      console.log("🟢 API Response - Firmware Compliance:", firmwareResponse);
+      console.log("🟢 API Response - Tasks:", tasksResponse);
+      console.log("🟢 API Response - Alerts:", alertsResponse);
   
-      if (response.error) {
-        setError(response.error);
-      } else {
-        const data = response.data || [];
-        
-        if (!Array.isArray(data)) {
-          console.error("❌ Expected an array but received:", data);
-          throw new Error("Invalid API response: Expected an array.");
-        }
-  
-        setInfrastructureData(data);
+      if (!Array.isArray(systemsResponse.data)) {
+        throw new Error("Invalid API response: Expected an array but received something else");
       }
-    } catch (err) {
-      console.error("❌ Error in loadData:", err);
-      setError("Failed to load data.");
+  
+      if (!Array.isArray(devicesResponse.data)) {
+        throw new Error("Invalid API response: Expected an array but received something else");
+      }
+  
+      setSystems(systemsResponse.data || []);
+      setComputeDevices(devicesResponse.data || []);
+      setFirmwareCompliance(firmwareResponse.data || { total: 0, compliant: 0, nonCompliant: 0 });
+      setActiveTasks(tasksResponse.data || []);
+      const formattedAlerts = alertsResponse.data.map((alert: { device: ComputeDevice; alert: string }) => ({
+        device: alert.device.serverLabel || alert.device.network?.hostName || alert.device.resourceId,
+        alert: alert.alert
+      }));
+      
+      setRecentAlerts(formattedAlerts);
+      
+    } catch (err: any) {
+      console.error("❌ Error loading dashboard data:", err);
+      setError(err.message || 'Failed to load dashboard data.');
+    } finally {
+      setLoading(false);
     }
   }, []);
-  
 
   useEffect(() => {
-    async function loadData() {
-      try {
-        const response = await fetchUcpSystems();
-        if (response.error) {
-          setError(response.error);
-        } else {
-          setInfrastructureData(response.data || []);
-        }
-      } catch (err) {
-        setError('Failed to load data.');
-      }
-    }
-  
     loadData();
-    const interval = setInterval(loadData, 30000); // Refresh every 30 seconds
-    return () => clearInterval(interval);
-  }, []);
-  
- 
-  const handleCardClick = (device: ComputeDevice) => {
-    const system = infrastructureData.find(sys => 
-      sys.computeDevices?.some((d: ComputeDevice) => d.resourceId === device.resourceId)
-    );
-    if (system) {
-      navigate(`/systems/${system.resourceId}`);
-    }
-  };
+  }, [loadData]);
 
   return (
     <>
-      <Grid hasGutter style={{ marginBottom: '1rem' }}>
-        {/* Logout Button */}
-        <GridItem span={12} style={{ textAlign: 'right', marginTop: '1rem' }}>
-          <Button variant="danger" onClick={handleLogout}>Logout</Button>
-        </GridItem>
-        <GridItem span={3}>
-          <Card isCompact className="metric-card">
-            <CardBody>
-              <CardTitle>Total Systems</CardTitle>
-              <div className="pf-u-font-size-2xl metric-value">{infrastructureData.length}</div>
-            </CardBody>
-          </Card>
-        </GridItem>
-        <GridItem span={3}>
-          <Card isCompact className="metric-card">
-            <CardBody>
-              <CardTitle>Compute Devices</CardTitle>
-              <div className="pf-u-font-size-2xl metric-value">{computeDevices.length}</div>
-            </CardBody>
-          </Card>
-        </GridItem>
-        <GridItem span={3}>
-          <Card isCompact className="metric-card">
-            <CardBody>
-              <CardTitle>Total CPUs</CardTitle>
-              <div className="pf-u-font-size-2xl metric-value">
-                {computeDevices.reduce((sum, device) => sum + (device.cpus || 0), 0)}
-              </div>
-            </CardBody>
-          </Card>
-        </GridItem>
-        <GridItem span={3}>
-          <Card isCompact className="metric-card">
-            <CardBody>
-              <CardTitle>Total Memory</CardTitle>
-              <div className="pf-u-font-size-2xl metric-value">
-                {Math.round(computeDevices.reduce((sum, device) => sum + (device.totalMemoryInMb || 0), 0) / 1024)} GB
-              </div>
-            </CardBody>
-          </Card>
-        </GridItem>
-      </Grid>
-      
-      <MapContainer center={[20, 0] as LatLngExpression} zoom={2} style={{ height: '400px', width: '100%' }}>
-        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-        <MarkerClusterGroup>
-        {Array.isArray(infrastructureData) && infrastructureData.map(system => {
-          const lat = system.geoInformation?.latitude ? parseFloat(system.geoInformation.latitude) : 0;
-          const lon = system.geoInformation?.longitude ? parseFloat(system.geoInformation.longitude) : 0;
-          return (
-            <Marker 
-              key={system.resourceId} 
-              position={[lat, lon] as LatLngExpression} 
-              icon={customMarkerIcon}
-            >
-              <Popup>
-                <div style={{ minWidth: '200px' }}>
-                  <h3 style={{ margin: '0 0 8px 0' }}>{system.name || 'Unknown System'}</h3>
-                  <p style={{ margin: '0 0 8px 0' }}>
-                    <Label color={getStatusVariant(system.resourceState || '')}>{system.resourceState || 'Unknown'}</Label>
-                  </p>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <p style={{ margin: 0 }}><strong>Model:</strong> {system.model || 'Unknown'}</p>
-                    <p style={{ margin: 0 }}><strong>Region:</strong> {system.region || 'Unknown'}</p>
-                    {system.computeDevices?.length > 0 && (
-                      <p style={{ margin: 0 }}><strong>Compute Devices:</strong> {system.computeDevices.length}</p>
-                    )}
-                  </div>
-                  <Button 
-                    variant="primary" 
-                    onClick={() => navigate(`/systems/${system.resourceId}`)}
-                    style={{ marginTop: '8px', width: '100%' }}
-                  >
-                    View Details
-                  </Button>
-                </div>
-              </Popup>
-            </Marker>
-          );
-      })}
-        </MarkerClusterGroup>
-      </MapContainer>
-
-      {hoveredSystem && (
-        <div className="hover-card-container" style={{ position: 'absolute', top: '20px', right: '20px', zIndex: 1000 }}>
-          <Card isCompact className="hover-card">
-            <CardBody>
-              <CardTitle style={{ cursor: 'pointer' }} onClick={() => navigate(`/systems/${hoveredSystem.resourceId}`)}>
-                {hoveredSystem.name || 'Unknown'} - {hoveredSystem.model || 'Unknown'}
-              </CardTitle>
-              <Label color={getStatusVariant(hoveredSystem.resourceState || '')}>{hoveredSystem.resourceState || 'Unknown'}</Label>
-              {(hoveredSystem.computeDevices || []).length > 0 && <p>Compute Devices: {hoveredSystem.computeDevices.length}</p>}
-              {(hoveredSystem.storageDevices || []).length > 0 && <p>Storage Devices: {hoveredSystem.storageDevices.length}</p>}
-              {(hoveredSystem.ethernetSwitches || []).length > 0 && <p>Network Switches: {hoveredSystem.ethernetSwitches.length}</p>}
-              {(hoveredSystem.fibreChannelSwitches || []).length > 0 && <p>FC Switches: {hoveredSystem.fibreChannelSwitches.length}</p>}
-            </CardBody>
-          </Card>
-        </div>
-      )}
-
       <Grid hasGutter>
-        {error && <Alert variant="danger" title={error} />}
-        {computeDevices.length > 0 ? (
-          computeDevices.map(device => (
-            <GridItem span={4} key={device.resourceId}>
-              <Card onClick={() => handleCardClick(device)} isClickable className="hover-card">
-                <CardBody className="pf-u-text-align-center">
-                  <ServerIcon size={32} className="pf-u-mb-md" />
-                  <CardTitle>{device.model}</CardTitle>
-                  <Label color={getStatusVariant(device.resourceState || '')}>{device.resourceState || 'Unknown'}</Label>
-                  <Label 
-                    color={(device.powerStatus || '').toLowerCase() === 'on' ? 'green' : 'red'}
-                    className="pf-u-ml-sm"
-                  >
-                    {device.powerStatus || 'Unknown'}
-                  </Label>
-                  <p><strong>Serial:</strong> {device.serialNumber}</p>
-                  <p><strong>CPUs:</strong> {device.cpus}</p>
-                  <p><strong>Memory:</strong> {Math.round(device.totalMemoryInMb / 1024)} GB</p>
-                  {device.gpus > 0 && <p><strong>GPUs:</strong> {device.gpus}</p>}
-                </CardBody>
-              </Card>
-            </GridItem>
-          ))
-        ) : (
-          <Spinner />
-        )}
+        {/* Logout Button */}
+        <GridItem span={12} style={{ textAlign: 'right' }}>
+          <Button variant="danger" onClick={() => { logout(); navigate('/login'); }}>
+            Logout
+          </Button>
+        </GridItem>
+
+        {/* Total Systems & Compute Devices */}
+        <GridItem span={3}>
+          <Card isCompact>
+            <CardBody>
+              <CardTitle>Total UCP Systems</CardTitle>
+              <div className="pf-u-font-size-lg">{systems.length}</div>
+            </CardBody>
+          </Card>
+        </GridItem>
+        <GridItem span={3}>
+          <Card isCompact>
+            <CardBody>
+              <CardTitle>Total Compute Devices</CardTitle>
+              <div className="pf-u-font-size-lg">{computeDevices.length}</div>
+            </CardBody>
+          </Card>
+        </GridItem>
+
+        {/* Firmware Compliance */}
+        <GridItem span={6}>
+          <Card isCompact>
+            <CardBody>
+              <CardTitle>Firmware Compliance</CardTitle>
+              {firmwareCompliance.total > 0 ? (
+                <ChartDonut
+                  data={[
+                    { x: 'Compliant', y: firmwareCompliance.compliant },
+                    { x: 'Non-Compliant', y: firmwareCompliance.nonCompliant }
+                  ]}
+                  labels={({ datum }) => `${datum.x}: ${datum.y}`}
+                  title={`${firmwareCompliance.compliant} / ${firmwareCompliance.total}`}
+                  subTitle="Compliant Devices"
+                  themeColor={ChartThemeColor.green}
+                  height={150}
+                  width={300}
+                />
+              ) : (
+                <Spinner />
+              )}
+            </CardBody>
+          </Card>
+        </GridItem>
       </Grid>
+
+      {/* Recent Alerts Panel */}
+      <Grid hasGutter>
+        <GridItem span={6}>
+          <Card>
+            <CardBody>
+              <CardTitle>Recent Alerts (Last 24h)</CardTitle>
+              {recentAlerts.length > 0 ? (
+                <List>
+                  {recentAlerts.map((alert, index) => (
+                    <ListItem key={index}>
+                      {alert.device} - {alert.alert}
+                    </ListItem>
+                  ))}
+                </List>
+              ) : (
+                <p>No recent alerts.</p>
+              )}
+            </CardBody>
+          </Card>
+        </GridItem>
+
+        {/* Active Tasks */}
+        <GridItem span={6}>
+          <Card>
+            <CardBody>
+              <CardTitle>Active Tasks</CardTitle>
+              {activeTasks.length > 0 ? (
+                <List>
+                  {activeTasks.map(task => (
+                    <ListItem key={task.id}>
+                      {task.name} - {task.status} (Started: {new Date(task.startTime).toLocaleString()})
+                    </ListItem>
+                  ))}
+                </List>
+              ) : (
+                <p>No active tasks.</p>
+              )}
+            </CardBody>
+          </Card>
+        </GridItem>
+      </Grid>
+
+      {/* Map */}
+      <Grid hasGutter>
+        <GridItem span={12}>
+          <Card>
+            <CardBody>
+              <CardTitle>UCP System Locations</CardTitle>
+              <MapContainer
+                  center={[20, 0]}
+                  zoom={2}
+                  minZoom={2}   // Prevent zooming out too far
+                  maxZoom={10}  // Limit excessive zoom
+                  style={{ height: '400px', width: '50%' }} // Adjust width to half
+                  preferCanvas={true} // Fix white tiles
+                >
+                  <TileLayer
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+                  <MarkerClusterGroup>
+                    {systems.map((system) => {
+                    const lat = parseFloat(system.geoInformation?.latitude || "0");
+                    const lon = parseFloat(system.geoInformation?.longitude || "0");
+                      return (
+                        <Marker key={system.resourceId} position={[lat, lon]} icon={customMarkerIcon}>
+                          <Popup>
+                            <h3>{system.name || 'Unknown System'}</h3>
+                            <p><strong>Region:</strong> {system.region || 'Unknown'}</p>
+                            <p><strong>Compute Devices:</strong> {system.computeDevices?.length || 0}</p>
+                            <Button variant="primary" onClick={() => navigate(`/systems/${system.resourceId}`)}>View Details</Button>
+                          </Popup>
+                        </Marker>
+                      );
+                    })}
+                  </MarkerClusterGroup>
+                </MapContainer>
+            </CardBody>
+          </Card>
+        </GridItem>
+      </Grid>
+
+      {loading && <Spinner />}
+      {error && <Alert variant="danger" title={error} />}
     </>
   );
 }

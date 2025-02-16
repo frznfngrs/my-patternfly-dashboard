@@ -18,6 +18,13 @@ export interface ComputeDevice {
   bmcFirmwareVersion?: string;
   biosFirmwareVersion?: string;
   cpldFirmwareVersion?: string;
+  isFirmwareAtRecommended?: boolean;
+  processorHealthStatus?: string;
+  healthStatus: string; 
+  serverLabel?: string; 
+  network?: {
+    hostName?: string; 
+  };
 }
 
 export interface GpuInfo {
@@ -36,10 +43,10 @@ export interface UcpSystem {
   name: string;
   model: string;
   serialNumber: string;
-  region: string;
+  region?: string;
   gatewayAddress: string;
   resourceState: string;
-  computeDevices: ComputeDevice[];
+  computeDevices?: ComputeDevice[];
   storageDevices: any[];
   ethernetSwitches: any[];
   fibreChannelSwitches: any[];
@@ -49,12 +56,18 @@ export interface UcpSystem {
     zipcode?: string;
     latitude?: string;
     longitude?: string;
+    resourceId: string;
   };
 }
 
 export interface ApiResponse<T> {
   data: T;
   error?: string;
+}
+
+export interface Alert {
+  device: string;
+  issue: string;
 }
 
 function getApiBaseUrl(): string {
@@ -172,12 +185,18 @@ export async function fetchUcpSystems(): Promise<{ data: UcpSystem[]; error?: st
  * ✅ Fetch all Compute Devices from all UCP Systems
  */
 export async function fetchComputeDevices(): Promise<ApiResponse<ComputeDevice[]>> {
-  const systemsResponse = await fetchUcpSystems();
-  if (systemsResponse.error) return { data: [], error: systemsResponse.error };
+  const response = await fetchWithAuth<{ data: ComputeDevice[] }>('/porcelain/v2/compute/devices');
 
-  const computeDevices = systemsResponse.data.flatMap(system => system.computeDevices || []);
-  return { data: computeDevices };
+  if (response.error) return { data: [], error: response.error };
+
+  if (!response.data || !Array.isArray(response.data.data)) {
+    console.error("❌ API response 'data' is not an array:", response);
+    return { data: [], error: "Invalid API response format" };
+  }
+
+  return { data: response.data.data }; // ✅ Extract the actual array
 }
+
 
 /**
  * ✅ Fetch Compute Device Power State
@@ -187,4 +206,89 @@ export async function setComputePowerState(resourceId: string, action: 'ON' | 'O
     method: 'POST',
     body: JSON.stringify({ action })
   });
+}
+
+// ✅ Fetch Firmware Compliance Data
+export async function fetchFirmwareCompliance() {
+  try {
+    const computeDevicesResponse = await fetchComputeDevices();
+    if (computeDevicesResponse.error) {
+      throw new Error(computeDevicesResponse.error);
+    }
+
+    const computeDevices = computeDevicesResponse.data;
+    const compliantCount = computeDevices.filter(device => device.isFirmwareAtRecommended).length;
+    const nonCompliantCount = computeDevices.length - compliantCount;
+
+    return {
+      data: {
+        total: computeDevices.length,
+        compliant: compliantCount,
+        nonCompliant: nonCompliantCount
+      }
+    };
+  } catch (error: unknown) {
+    let errorMessage = 'Failed to fetch firmware compliance data';
+    if (error instanceof Error) {
+        errorMessage = error.message;
+    }
+    return { error: errorMessage };
+}
+}
+
+// ✅ Fetch Recent Alerts
+export async function fetchRecentAlerts(): Promise<ApiResponse<{ device: ComputeDevice; alert: string }[]>> {
+  try {
+    const computeResponse = await fetchComputeDevices();
+    if (computeResponse.error) return { data: [], error: computeResponse.error };
+
+    const alerts: { device: ComputeDevice; alert: string }[] = [];
+
+    computeResponse.data.forEach((device) => {
+      const healthFields = [
+        "driveHealthStatus",
+        "fanHealthStatus",
+        "temperatureHealthStatus",
+        "voltageHealthStatus",
+        "processorHealthStatus",
+        "powerSupplyHealthStatus",
+      ];
+
+      healthFields.forEach((field) => {
+        const status = (device as any)[field]; // Access dynamically
+        if (status && status !== "NORMAL") {
+          alerts.push({
+            device,
+            alert: `${field.replace(/([A-Z])/g, " $1")}: ${status}`, // Format "powerSupplyHealthStatus" → "Power Supply Health Status"
+          });
+        }
+      });
+    });
+
+    return { data: alerts };
+  } catch (error) {
+    return { data: [], error: error instanceof Error ? error.message : "Failed to fetch alerts" };
+  }
+}
+
+// ✅ Fetch Active Tasks
+export async function fetchActiveTasks(): Promise<ApiResponse<{ id: string; name: string; status: string; startTime: string }[]>> {
+  try {
+    const response = await fetchWithAuth<{ data?: { id: string; name: string; status: string; startTime: string }[] }>('/porcelain/v2/tasks');
+    if (response.error) return { data: [], error: response.error };
+
+    // Ensure `response.data` is an array before filtering
+    if (!Array.isArray(response.data)) {
+      return { data: [], error: "Invalid API response: Expected an array but received something else" };
+    }
+
+    // Filter tasks that are not completed
+    const activeTasks = response.data.filter(task => 
+      task.status && task.status.toLowerCase() !== "completed"
+    );
+
+    return { data: activeTasks };
+  } catch (error) {
+    return { data: [], error: error instanceof Error ? error.message : "Failed to fetch active tasks" };
+  }
 }

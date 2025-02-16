@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import { Page, Masthead, MastheadMain, MastheadBrand, PageSidebar, PageSection, Title } from '@patternfly/react-core';
-import Dashboard from './Dashboard';
-import { SystemDetails } from './components/SystemDetails';
+import Dashboard from './Dashboard'; // Default export
+import { SystemDetails } from './components/SystemDetails'; // Named export
 import Setup from './Setup';
 import { authenticate } from './api';
 

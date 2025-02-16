@@ -33,18 +33,27 @@ const getStatusVariant = (status: string = ''): "green" | "orange" | "red" | "bl
   }
 };
 
+interface GeoInformation {
+  geoLocation?: string;
+  country?: string;
+  zipcode?: string;
+  latitude?: string;
+  longitude?: string;
+}
+
 interface UcpSystem {
   resourceId: string;
   name: string;
   model: string;
   serialNumber: string;
-  region: string;
+  region?: string;  // ✅ Make `region` optional
   gatewayAddress: string;
   resourceState: string;
   computeDevices: any[];
   storageDevices: any[];
   ethernetSwitches: any[];
   fibreChannelSwitches: any[];
+  geoInformation?: GeoInformation;
 }
 
 export function SystemDetails() {
@@ -78,7 +87,23 @@ export function SystemDetails() {
           return;
         }
 
-        setSystem(foundSystem);
+        // ✅ Ensure `region` is always a string
+        setSystem({
+          ...foundSystem,
+          region: foundSystem.region || 'Unknown',
+          computeDevices: foundSystem.computeDevices || [],
+          storageDevices: foundSystem.storageDevices || [],
+          ethernetSwitches: foundSystem.ethernetSwitches || [],
+          fibreChannelSwitches: foundSystem.fibreChannelSwitches || [],
+          geoInformation: {
+            geoLocation: foundSystem.geoInformation?.geoLocation || 'Unknown',
+            country: foundSystem.geoInformation?.country || 'Unknown',
+            zipcode: foundSystem.geoInformation?.zipcode || 'Unknown',
+            latitude: foundSystem.geoInformation?.latitude || '0',
+            longitude: foundSystem.geoInformation?.longitude || '0',
+          },
+        });
+        
       } catch (err) {
         setError('Failed to load system details');
       } finally {
@@ -117,10 +142,7 @@ export function SystemDetails() {
           <Card>
             <CardBody>
               <Tabs activeKey={activeTab} onSelect={handleTabClick} isBox>
-                <Tab 
-                  eventKey={0} 
-                  title={<TabTitleText>Overview</TabTitleText>}
-                >
+                <Tab eventKey={0} title={<TabTitleText>Overview</TabTitleText>}>
                   <Card>
                     <CardTitle>System Information</CardTitle>
                     <CardBody>
@@ -139,7 +161,7 @@ export function SystemDetails() {
                         </DescriptionListGroup>
                         <DescriptionListGroup>
                           <DescriptionListTerm>Region</DescriptionListTerm>
-                          <DescriptionListDescription>{system.region || 'Unknown'}</DescriptionListDescription>
+                          <DescriptionListDescription>{system.region}</DescriptionListDescription>  {/* ✅ Always safe now */}
                         </DescriptionListGroup>
                         <DescriptionListGroup>
                           <DescriptionListTerm>Gateway Address</DescriptionListTerm>
@@ -157,28 +179,16 @@ export function SystemDetails() {
                     </CardBody>
                   </Card>
                 </Tab>
-                <Tab 
-                  eventKey={1} 
-                  title={<TabTitleText>Compute</TabTitleText>}
-                >
+                <Tab eventKey={1} title={<TabTitleText>Compute</TabTitleText>}>
                   <ComputeDeviceList systemId={id} />
                 </Tab>
-                <Tab 
-                  eventKey={2} 
-                  title={<TabTitleText>Storage</TabTitleText>}
-                >
+                <Tab eventKey={2} title={<TabTitleText>Storage</TabTitleText>}>
                   {/* Storage devices will go here */}
                 </Tab>
-                <Tab 
-                  eventKey={3} 
-                  title={<TabTitleText>Network</TabTitleText>}
-                >
+                <Tab eventKey={3} title={<TabTitleText>Network</TabTitleText>}>
                   {/* Network devices will go here */}
                 </Tab>
-                <Tab 
-                  eventKey={4} 
-                  title={<TabTitleText>FC Switches</TabTitleText>}
-                >
+                <Tab eventKey={4} title={<TabTitleText>FC Switches</TabTitleText>}>
                   {/* FC switches will go here */}
                 </Tab>
               </Tabs>
