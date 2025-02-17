@@ -1,16 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import { Page, Masthead, MastheadMain, MastheadBrand, PageSidebar, PageSection, Title } from '@patternfly/react-core';
 import Dashboard from './Dashboard'; // Default export
 import { SystemDetails } from './components/SystemDetails'; // Named export
 import Setup from './Setup';
 import { authenticate } from './api';
+import './styles.css'; // Ensure styles are applied
 
 function App() {
   const [isConfigured, setIsConfigured] = useState(!!localStorage.getItem('bearerToken'));
+  const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 768);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsSidebarOpen(window.innerWidth > 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const handleSetup = async (config: { apiUrl: string; username: string; password: string }) => {
-    localStorage.setItem('apiUrl', config.apiUrl); // Store API URL from setup
+    localStorage.setItem('apiUrl', config.apiUrl);
     try {
       const authResult = await authenticate(config.username, config.password);
       if (authResult.success) {
@@ -18,7 +28,7 @@ function App() {
       } else {
         alert('Authentication failed: ' + authResult.message);
       }
-    } catch (error: unknown) {
+    } catch (error) {
       console.error('Authentication Error:', error);
       alert('An unexpected error occurred during authentication.');
     }
@@ -32,7 +42,7 @@ function App() {
     </Masthead>
   );
 
-  const Sidebar = <PageSidebar />;
+  const Sidebar = <PageSidebar className={isSidebarOpen ? 'sidebar open' : 'sidebar closed'} />;
 
   if (!isConfigured) {
     return (
